@@ -1,4 +1,6 @@
 package com.gdb.domain;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import com.gdb.exceptions.*;
 
@@ -9,6 +11,8 @@ public abstract class AbstractAccount implements IAccount {
     protected static final int MIN_AGE = 18;
     protected static final int MIN_PIN = 1000;
     protected static final int MAX_PIN = 9999;
+    protected double dailyTransferTotal = 0.0;
+    protected LocalDateTime lastTransferDate = LocalDateTime.now();
 
     protected int accountNumber;
     protected String name;
@@ -200,5 +204,73 @@ public abstract class AbstractAccount implements IAccount {
 
     public void setBalance(double balance) {
         this.balance = balance;
+    }
+    public double getDailyTransferTotal() {
+        resetDailyTransferIfNeeded();
+        return dailyTransferTotal;
+    }
+
+    public LocalDateTime getLastTransferDate() {
+        return lastTransferDate;
+    }
+
+    public double getDailyTransferLimit() {
+        return AccountRulesEngine.getInstance()
+                .getDailyTransferLimit(getAccountType(), getTenureYears());
+    }
+
+    public double getRemainingDailyTransferLimit() {
+        resetDailyTransferIfNeeded();
+        return Math.max(0.0, getDailyTransferLimit() - dailyTransferTotal);
+    }
+
+    public boolean canTransfer(double amount) {
+        resetDailyTransferIfNeeded();
+
+        return amount > 0
+                && Double.isFinite(amount)
+                && dailyTransferTotal + amount <= getDailyTransferLimit();
+    }
+
+    public void updateDailyTransferTotal(double amount) {
+        resetDailyTransferIfNeeded();
+        dailyTransferTotal += amount;
+        lastTransferDate = LocalDateTime.now();
+    }
+
+    public void resetDailyTransferIfNeeded() {
+        LocalDate today = LocalDate.now();
+
+        if (lastTransferDate == null
+                || !lastTransferDate.toLocalDate().equals(today)) {
+
+            dailyTransferTotal = 0.0;
+            lastTransferDate = LocalDateTime.now();
+        }
+    }
+
+    public boolean isActive() {
+        return status != null && status.equalsIgnoreCase("ACTIVE");
+    }
+
+    public boolean canWithdraw(double amount) {
+        if (!isActive() || amount <= 0 || !Double.isFinite(amount)) {
+            return false;
+        }
+
+        if ("FIXEDDEPOSIT".equalsIgnoreCase(accountType)
+                || "FIXED DEPOSIT".equalsIgnoreCase(accountType)) {
+            return false;
+        }
+
+        if ("CURRENT".equalsIgnoreCase(accountType)) {
+            return balance - amount >= -25000.0;
+        }
+
+        return amount <= balance;
+    }
+
+    public int getTenureYears() {
+        return 0;
     }
 }

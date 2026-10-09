@@ -188,21 +188,19 @@ public class AccountRulesEngine {
         String key;
 
         if ("dailyTransferLimit".equals(featureName)) {
-            key = bucket + ".daily.transfer.limit";
 
-            double value = loader.getDouble(key, Double.NaN);
+            String dailyLimitKey = "daily.transfer.limit." + bucket;
 
+            double value = loader.getDouble(dailyLimitKey, Double.NaN);
+
+            // Support the older key format as a fallback
             if (Double.isNaN(value)) {
                 value = loader.getDouble(
-                        "daily.transfer.limit." + bucket,
+                        bucket + ".daily.transfer.limit",
                         Double.NaN);
             }
 
-            if (Double.isNaN(value)) {
-                return null;
-            }
-
-            return value;
+            return Double.isNaN(value) ? null : value;
         }
 
         if ("overdraftLimit".equals(featureName)) {
