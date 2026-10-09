@@ -1,5 +1,9 @@
 package com.gdb.service;
 
+
+import java.time.LocalDateTime;
+import com.gdb.domain.Transaction;
+import com.gdb.domain.TransactionType;
 import com.gdb.domain.AbstractAccount;
 import com.gdb.exceptions.AccountException;
 import com.gdb.exceptions.InactiveAccountException;
@@ -54,5 +58,29 @@ public class TransferService {
 
         // 8. Record the transfer against the sender's daily limit
         from.updateDailyTransferTotal(amount);
+    }
+
+    public static Transaction transferWithTransaction(
+            AbstractAccount from,
+            AbstractAccount to,
+            double amount,
+            int pin) throws AccountException {
+
+        // Use the existing, validated transfer method.
+        transfer(from, to, amount, pin);
+
+        return new Transaction(
+                Transaction.generateId(),
+                LocalDateTime.now(),
+                from.getAccountNumber(),
+                TransactionType.TRANSFER,
+                amount,
+                from.getBalance(),
+                "SUCCESS",
+                "Transfer of Rs. " + amount
+                        + " to Account #" + to.getAccountNumber(),
+                from.getAccountNumber(),
+                to.getAccountNumber()
+        );
     }
 }

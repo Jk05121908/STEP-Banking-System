@@ -273,4 +273,42 @@ public abstract class AbstractAccount implements IAccount {
     public int getTenureYears() {
         return 0;
     }
+
+    public Transaction depositWithTransaction(double amount)
+            throws AccountException {
+
+        deposit(amount);
+
+        return new Transaction(
+                Transaction.generateId(),
+                LocalDateTime.now(),
+                getAccountNumber(),
+                TransactionType.DEPOSIT,
+                amount,
+                getBalance(),
+                "SUCCESS",
+                "Deposit of Rs. " + amount,
+                0,
+                getAccountNumber()
+        );
+    }
+
+    public Transaction withdrawWithTransaction(double amount, int pin)
+            throws AccountException {
+
+        withdraw(amount, pin);
+
+        return new Transaction(
+                Transaction.generateId(),
+                LocalDateTime.now(),
+                getAccountNumber(),
+                TransactionType.WITHDRAW,
+                amount,
+                getBalance(),
+                "SUCCESS",
+                "Withdrawal of Rs. " + amount,
+                getAccountNumber(),
+                0
+        );
+    }
 }
