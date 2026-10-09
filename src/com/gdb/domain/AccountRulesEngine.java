@@ -1,58 +1,222 @@
 package com.gdb.domain;
 
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
 public class AccountRulesEngine {
 
-    private static final Map<String, Double> SAVINGS_MIN_BALANCE = new HashMap<>();
-    private static final Map<String, Double> SAVINGS_INTEREST_RATE = new HashMap<>();
+    private static final AccountRulesEngine INSTANCE =
+            new AccountRulesEngine();
 
-    static {
-        SAVINGS_MIN_BALANCE.put("NEW", 10000.0);
-        SAVINGS_MIN_BALANCE.put("STANDARD", 7500.0);
-        SAVINGS_MIN_BALANCE.put("PREMIUM", 5000.0);
-        SAVINGS_MIN_BALANCE.put("PRIVILEGE", 2500.0);
+    private final Map<String, AccountRulesPropertiesLoader> loaders =
+            new HashMap<>();
 
-        SAVINGS_INTEREST_RATE.put("NEW", 2.70);
-        SAVINGS_INTEREST_RATE.put("STANDARD", 3.00);
-        SAVINGS_INTEREST_RATE.put("PREMIUM", 3.50);
-        SAVINGS_INTEREST_RATE.put("PRIVILEGE", 4.00);
+    private AccountRulesEngine() {
+        loadRules();
+    }
+
+    public static AccountRulesEngine getInstance() {
+        return INSTANCE;
+    }
+
+    private void loadRules() {
+        loaders.put("SAVINGS",
+                loadProperties("savings.properties"));
+
+        loaders.put("CURRENT",
+                loadProperties("current.properties"));
+
+        loaders.put("FIXEDDEPOSIT",
+                loadProperties("fixeddeposit.properties"));
+
+        loaders.put("SALARY",
+                loadProperties("salary.properties"));
+    }
+
+    private AccountRulesPropertiesLoader loadProperties(
+            String fileName) {
+
+        String resourcePath = "config/rules/" + fileName;
+
+        InputStream input = getClass()
+                .getClassLoader()
+                .getResourceAsStream(resourcePath);
+
+        if (input == null) {
+            throw new RuntimeException(
+                    "Properties file not found: " + resourcePath
+                            + ". Check that src/main/resources is marked "
+                            + "as Resources Root.");
+        }
+
+        System.out.println(
+                "[Config] Loaded rules from src/main/resources/"
+                        + resourcePath);
+
+        return new AccountRulesPropertiesLoader(input);
     }
 
     private static String getTenureBucket(int tenureYears) {
         if (tenureYears >= 5) {
-            return "PRIVILEGE";
+            return "privilege";
         } else if (tenureYears >= 3) {
-            return "PREMIUM";
+            return "premium";
         } else if (tenureYears >= 1) {
-            return "STANDARD";
+            return "standard";
         } else {
-            return "NEW";
+            return "new";
         }
     }
 
+    private double readRule(
+            String accountType,
+            int tenureYears,
+            String key,
+            double defaultValue) {
+
+        AccountRulesPropertiesLoader loader =
+                loaders.get(normalizeAccountType(accountType));
+
+        if (loader == null) {
+            return defaultValue;
+        }
+
+        return loader.getDouble(
+                getTenureBucket(tenureYears) + "." + key,
+                defaultValue);
+    }
+
+    private String normalizeAccountType(String accountType) {
+        String type = accountType.trim()
+                .toUpperCase()
+                .replace(" ", "")
+                .replace("_", "");
+
+        if (type.equals("FD") || type.equals("FIXEDDEPOSITACCOUNT")) {
+            return "FIXEDDEPOSIT";
+        }
+
+        return type;
+    }
+
+    // Existing savings methods — now properties-driven
+
     public static double getSavingsMinBalance(int tenureYears) {
-        return SAVINGS_MIN_BALANCE.get(getTenureBucket(tenureYears));
+        return INSTANCE.readRule(
+                "SAVINGS", tenureYears,
+                "min.balance", 10000.0);
     }
 
     public static double getSavingsInterestRate(int tenureYears) {
-        return SAVINGS_INTEREST_RATE.get(getTenureBucket(tenureYears));
+        return INSTANCE.readRule(
+                "SAVINGS", tenureYears,
+                "interest.rate", 2.70);
     }
 
-    public static double getCurrentOverdraftLimit(double monthlyTurnover) {
-        return Math.max(monthlyTurnover * 2.5, 25000.0);
+    // Preserve the existing current-account API.
+
+    public static double getCurrentOverdraftLimit(
+            double monthlyTurnover) {
+
+        AccountRulesPropertiesLoader loader =
+                INSTANCE.loaders.get("CURRENT");
+
+        double multiplier = loader.getDouble(
+                "overdraft.multiplier", 2.5);
+
+        double minimum = loader.getDouble(
+                "minimum.overdraft.limit", 25000.0);
+
+        return Math.max(monthlyTurnover * multiplier, minimum);
     }
+
+    // Preserve the existing fixed-deposit API.
 
     public static double getFDInterestRate(int months) {
+
+        String bucket;
+
         if (months >= 12) {
-            return 6.5;
+            bucket = "privilege";
         } else if (months >= 6) {
-            return 5.5;
+            bucket = "premium";
         } else if (months >= 3) {
-            return 4.5;
+            bucket = "standard";
         } else {
-            return 3.5;
+            bucket = "new";
         }
+
+        AccountRulesPropertiesLoader loader =
+                INSTANCE.loaders.get("FIXEDDEPOSIT");
+
+        return loader.getDouble(
+                bucket + ".interest.rate", 3.5);
+    }
+
+    public static double getSalaryInactiveMonths(int tenureYears) {
+        return INSTANCE.readRule(
+                "SALARY", tenureYears,
+                "inactive.months", 3.0);
+    }
+
+    // Activity 15: Retrieve the daily limit for an account.
+
+    public double getDailyTransferLimit(
+            String accountType,
+            int tenureYears) {
+
+        Object value = getAdditionalFeature(
+                accountType, tenureYears, "dailyTransferLimit");
+
+        return value == null ? 0.0 : (Double) value;
+    }
+
+    public Object getAdditionalFeature(
+            String accountType,
+            int tenureYears,
+            String featureName) {
+
+        AccountRulesPropertiesLoader loader =
+                loaders.get(normalizeAccountType(accountType));
+
+        if (loader == null) {
+            return null;
+        }
+
+        String bucket = getTenureBucket(tenureYears);
+        String key;
+
+        if ("dailyTransferLimit".equals(featureName)) {
+            key = bucket + ".daily.transfer.limit";
+
+            double value = loader.getDouble(key, Double.NaN);
+
+            if (Double.isNaN(value)) {
+                value = loader.getDouble(
+                        "daily.transfer.limit." + bucket,
+                        Double.NaN);
+            }
+
+            if (Double.isNaN(value)) {
+                return null;
+            }
+
+            return value;
+        }
+
+        if ("overdraftLimit".equals(featureName)) {
+            key = bucket + ".overdraft.limit";
+
+            double value = loader.getDouble(key, Double.NaN);
+
+            if (Double.isNaN(value)) {
+                return null;
+            }
+
+            return value;
+        }
+
+        return null;
     }
 }
